@@ -1,0 +1,19 @@
+{
+  "name": "ansi-scribe",
+  "version": "0.1.0",
+  "description": "Validating parser and pretty printer for terminal escape sequences",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "node --test dist/*.test.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
