@@ -1,4 +1,4 @@
-import type { CsiToken, Position, Token } from './parser.js'
+import type { CsiToken, DcsToken, Position, SingleShiftToken, Token } from './parser.js'
 
 const SGR_NAMES: Record<number, string> = {
   0: 'reset',
@@ -73,11 +73,24 @@ const LABELS: Record<Token['kind'], string> = {
   control: 'control',
   csi: 'CSI',
   osc: 'OSC',
+  dcs: 'DCS',
+  ss2: 'SS2',
+  ss3: 'SS3',
   esc: 'ESC',
 }
 
 function positionLabel(pos: Position): string {
   return `${pos.line}:${pos.column}`
+}
+
+function describeDcs(token: DcsToken): string {
+  const params = token.params.join(';') || '(none)'
+  const header = `${token.intermediates}${token.final}` || '(incomplete)'
+  return `params=${params} header=${header} data=${JSON.stringify(token.data)}`
+}
+
+function describeSingleShift(token: SingleShiftToken): string {
+  return token.char === undefined ? '(none)' : JSON.stringify(token.char)
 }
 
 export function describe(token: Token): string {
@@ -92,6 +105,11 @@ export function describe(token: Token): string {
       return `${pos} ${label}${describeCsi(token)}`
     case 'osc':
       return `${pos} ${label}${token.identifier || '(none)'} ${JSON.stringify(token.data)} [${token.terminator}]`
+    case 'dcs':
+      return `${pos} ${label}${describeDcs(token)}`
+    case 'ss2':
+    case 'ss3':
+      return `${pos} ${label}${describeSingleShift(token)}`
     case 'esc':
       return `${pos} ${label}${token.intermediates}${token.final}`
   }

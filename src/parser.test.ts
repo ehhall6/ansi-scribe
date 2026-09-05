@@ -159,6 +159,112 @@ test('an OSC sequence with no terminator before the end of input is malformed', 
   assert.strictEqual(token.terminator, 'ST')
 })
 
+test('a well-formed DCS sequence parses params, header, data, and raw text', () => {
+  const { tokens, errors } = tokenize('\x1bP1;2$rfoo\x1b\\')
+  assert.strictEqual(errors.length, 0)
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'dcs') throw new Error('expected a DCS token')
+  assert.deepStrictEqual(token.params, ['1', '2'])
+  assert.strictEqual(token.intermediates, '$')
+  assert.strictEqual(token.final, 'r')
+  assert.strictEqual(token.data, 'foo')
+  assert.strictEqual(token.raw, '\x1bP1;2$rfoo\x1b\\')
+  assert.deepStrictEqual(token.end, { offset: 12, line: 1, column: 13 })
+})
+
+test('a DCS sequence with no data still parses once the final byte arrives', () => {
+  const { tokens } = tokenize('\x1bPq\x1b\\')
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'dcs') throw new Error('expected a DCS token')
+  assert.deepStrictEqual(token.params, [])
+  assert.strictEqual(token.final, 'q')
+  assert.strictEqual(token.data, '')
+})
+
+test('a DCS sequence missing its final byte reports an unterminated error', () => {
+  const { tokens, errors } = tokenize('\x1bP1;2')
+  assert.strictEqual(errors.length, 1)
+  const [error] = errors
+  if (error === undefined) throw new Error('expected an error')
+  assert.strictEqual(error.message, 'unterminated DCS sequence')
+  assert.match(error.hint ?? '', /0x40-0x7E/)
+
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'dcs') throw new Error('expected a DCS token')
+  assert.strictEqual(token.final, '')
+  assert.strictEqual(token.data, '')
+})
+
+test('a DCS sequence missing its string terminator reports an unterminated error', () => {
+  const { tokens, errors } = tokenize('\x1bPqfoo')
+  assert.strictEqual(errors.length, 1)
+  const [error] = errors
+  if (error === undefined) throw new Error('expected an error')
+  assert.strictEqual(error.message, 'unterminated DCS sequence')
+  assert.match(error.hint ?? '', /ESC \\/)
+
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'dcs') throw new Error('expected a DCS token')
+  assert.strictEqual(token.final, 'q')
+  assert.strictEqual(token.data, 'foo')
+})
+
+test('a byte outside every allowed DCS header class is rejected but parsing resumes', () => {
+  const { tokens, errors } = tokenize('\x1bP\x00qfoo\x1b\\')
+  assert.strictEqual(errors.length, 1)
+  const [error] = errors
+  if (error === undefined) throw new Error('expected an error')
+  assert.strictEqual(error.message, 'invalid byte 0x00 in DCS sequence')
+
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'dcs') throw new Error('expected a DCS token')
+  assert.strictEqual(token.final, 'q')
+  assert.strictEqual(token.data, 'foo')
+})
+
+test('SS2 consumes exactly one following character', () => {
+  const { tokens, errors } = tokenize('\x1bNx')
+  assert.strictEqual(errors.length, 0)
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'ss2') throw new Error('expected an SS2 token')
+  assert.strictEqual(token.char, 'x')
+  assert.strictEqual(token.raw, '\x1bNx')
+  assert.deepStrictEqual(token.end, { offset: 3, line: 1, column: 4 })
+})
+
+test('SS3 consumes exactly one following character', () => {
+  const { tokens } = tokenize('\x1bOy')
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'ss3') throw new Error('expected an SS3 token')
+  assert.strictEqual(token.char, 'y')
+  assert.strictEqual(token.raw, '\x1bOy')
+})
+
+test('SS2 at the very end of input has no character to select', () => {
+  const { tokens, errors } = tokenize('\x1bN')
+  assert.strictEqual(errors.length, 1)
+  const [error] = errors
+  if (error === undefined) throw new Error('expected an error')
+  assert.strictEqual(error.message, 'incomplete SS2 sequence')
+
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'ss2') throw new Error('expected an SS2 token')
+  assert.strictEqual(token.char, undefined)
+  assert.strictEqual(token.raw, '\x1bN')
+})
+
+test('SS3 followed by a control byte is rejected but still consumes the byte', () => {
+  const { tokens, errors } = tokenize('\x1bO\x01')
+  assert.strictEqual(errors.length, 1)
+  const [error] = errors
+  if (error === undefined) throw new Error('expected an error')
+  assert.strictEqual(error.message, 'invalid byte 0x01 after SS3')
+
+  const [token] = tokens
+  if (token === undefined || token.kind !== 'ss3') throw new Error('expected an SS3 token')
+  assert.strictEqual(token.char, '\x01')
+})
+
 test('a simple Fp/Fs escape with no intermediates parses its final byte', () => {
   const { tokens, errors } = tokenize('\x1b7')
   assert.strictEqual(errors.length, 0)

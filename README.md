@@ -14,9 +14,10 @@ and pretty-prints a token stream into something a human can read.
 
 It covers the subset of ECMA-48 / ANSI X3.64 that real terminals implement:
 C0 controls, CSI sequences (cursor movement, SGR/color codes, erase
-functions), OSC sequences (window title, hyperlinks), and the other ESC
-Fp/Fe/Fs single-sequences (charset designation, save/restore cursor, and so
-on).
+functions), OSC sequences (window title, hyperlinks), DCS sequences (device
+control strings, e.g. Sixel or terminal passthrough), SS2/SS3 single shifts,
+and the other ESC Fp/Fe/Fs single-sequences (charset designation,
+save/restore cursor, and so on).
 
 ## Install
 
@@ -83,7 +84,6 @@ even once a control byte like ESC has been swapped out for a printable
 
 ## What it does not do yet
 
-- DCS and SS2/SS3 sequences are not parsed.
 - The SGR table covers the common codes (styles, 8/16-color, resets) but not
   256-color or truecolor extended parameters (`38;5;n` / `38;2;r;g;b`).
 - Input must already be a JS string. Raw byte streams (e.g. a captured pty

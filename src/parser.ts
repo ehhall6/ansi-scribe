@@ -1,8 +1,8 @@
 // Tokenizer and validator for the escape sequence grammar terminals actually
-// implement (ECMA-48 / ANSI X3.64, informally): C0 controls, CSI, OSC, and
-// the single ESC Fp/Fe/Fs sequences (charset designation, save/restore
-// cursor, and so on). It does not attempt to model DCS or 8-bit C1 controls
-// yet -- see the README for what's out of scope.
+// implement (ECMA-48 / ANSI X3.64, informally): C0 controls, CSI, OSC, DCS,
+// SS2/SS3, and the single ESC Fp/Fe/Fs sequences (charset designation,
+// save/restore cursor, and so on). It does not attempt to model 8-bit C1
+// controls yet -- see the README for what's out of scope.
 
 export interface Position {
   readonly offset: number
@@ -55,6 +55,25 @@ export interface OscToken {
   end: Position
 }
 
+export interface DcsToken {
+  kind: 'dcs'
+  params: string[]
+  intermediates: string
+  final: string
+  data: string
+  raw: string
+  start: Position
+  end: Position
+}
+
+export interface SingleShiftToken {
+  kind: 'ss2' | 'ss3'
+  char: string | undefined
+  raw: string
+  start: Position
+  end: Position
+}
+
 export interface EscToken {
   kind: 'esc'
   intermediates: string
@@ -64,7 +83,14 @@ export interface EscToken {
   end: Position
 }
 
-export type Token = TextToken | ControlToken | CsiToken | OscToken | EscToken
+export type Token =
+  | TextToken
+  | ControlToken
+  | CsiToken
+  | OscToken
+  | DcsToken
+  | SingleShiftToken
+  | EscToken
 
 const CONTROL_GLYPHS: Record<string, string> = {
   '\x1b': '\\e',
@@ -287,6 +313,136 @@ function readOsc(cursor: Cursor, source: string, start: Position, errors: ParseE
   }
 }
 
+function readDcs(cursor: Cursor, source: string, start: Position, errors: ParseError[]): DcsToken {
+  let paramText = ''
+  let intermediates = ''
+  let final = ''
+  let raw = '\x1bP'
+
+  // Header bytes follow the same classes as CSI, but instead of ending the
+  // sequence the final byte introduces a passthrough data string that runs
+  // until the string terminator.
+  while (final === '') {
+    const ch = cursor.peek()
+    if (ch === undefined) {
+      errors.push(
+        new ParseError(
+          'unterminated DCS sequence',
+          cursor.position,
+          source,
+          'expected a final byte in the range 0x40-0x7E before the end of input',
+        ),
+      )
+      return { kind: 'dcs', params: paramText.length > 0 ? paramText.split(';') : [], intermediates, final, data: '', raw, start, end: cursor.position }
+    }
+    const code = ch.charCodeAt(0)
+    if (code >= 0x30 && code <= 0x3f && intermediates === '') {
+      paramText += ch
+      raw += ch
+      cursor.next()
+      continue
+    }
+    if (code >= 0x20 && code <= 0x2f) {
+      intermediates += ch
+      raw += ch
+      cursor.next()
+      continue
+    }
+    if (code >= 0x40 && code <= 0x7e) {
+      final = ch
+      raw += ch
+      cursor.next()
+      break
+    }
+    errors.push(
+      new ParseError(
+        `invalid byte 0x${code.toString(16).padStart(2, '0')} in DCS sequence`,
+        cursor.position,
+        source,
+        'DCS parameters must be 0x30-0x3F, intermediates 0x20-0x2F, and the header must end with a final byte 0x40-0x7E',
+      ),
+    )
+    raw += ch
+    cursor.next()
+  }
+
+  let data = ''
+  while (true) {
+    const ch = cursor.peek()
+    if (ch === undefined) {
+      errors.push(
+        new ParseError(
+          'unterminated DCS sequence',
+          cursor.position,
+          source,
+          'expected the string terminator ESC \\ before the end of input',
+        ),
+      )
+      break
+    }
+    if (ch === '\x1b' && cursor.peek(1) === '\\') {
+      cursor.next()
+      cursor.next()
+      raw += '\x1b\\'
+      break
+    }
+    data += ch
+    raw += ch
+    cursor.next()
+  }
+
+  return {
+    kind: 'dcs',
+    params: paramText.length > 0 ? paramText.split(';') : [],
+    intermediates,
+    final,
+    data,
+    raw,
+    start,
+    end: cursor.position,
+  }
+}
+
+function readSingleShift(
+  kind: 'ss2' | 'ss3',
+  cursor: Cursor,
+  source: string,
+  start: Position,
+  errors: ParseError[],
+): SingleShiftToken {
+  const label = kind === 'ss2' ? 'SS2' : 'SS3'
+  const introducer = kind === 'ss2' ? 'N' : 'O'
+  let raw = `\x1b${introducer}`
+
+  const ch = cursor.peek()
+  if (ch === undefined) {
+    errors.push(
+      new ParseError(
+        `incomplete ${label} sequence`,
+        cursor.position,
+        source,
+        `${label} must be followed by exactly one character before the end of input`,
+      ),
+    )
+    return { kind, char: undefined, raw, start, end: cursor.position }
+  }
+
+  const code = ch.charCodeAt(0)
+  if (code < 0x20 || code === 0x7f) {
+    errors.push(
+      new ParseError(
+        `invalid byte 0x${code.toString(16).padStart(2, '0')} after ${label}`,
+        cursor.position,
+        source,
+        `${label} selects the next printable character (0x20-0x7E), not a control byte`,
+      ),
+    )
+  }
+  cursor.next()
+  raw += ch
+  return { kind, char: ch, raw, start, end: cursor.position }
+}
+
 function readSimpleEscape(cursor: Cursor, source: string, start: Position, errors: ParseError[]): EscToken {
   let intermediates = ''
   let final = ''
@@ -354,6 +510,18 @@ function readEscapeSequence(cursor: Cursor, source: string, start: Position, err
   if (next === ']') {
     cursor.next()
     return readOsc(cursor, source, start, errors)
+  }
+  if (next === 'P') {
+    cursor.next()
+    return readDcs(cursor, source, start, errors)
+  }
+  if (next === 'N') {
+    cursor.next()
+    return readSingleShift('ss2', cursor, source, start, errors)
+  }
+  if (next === 'O') {
+    cursor.next()
+    return readSingleShift('ss3', cursor, source, start, errors)
   }
   return readSimpleEscape(cursor, source, start, errors)
 }
