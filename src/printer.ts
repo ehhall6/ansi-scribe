@@ -24,6 +24,37 @@ const SGR_NAMES: Record<number, string> = {
 
 const BASE_COLORS = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
 
+function toNumber(param: string | undefined): number | undefined {
+  if (param === undefined || param === '') return undefined
+  const n = Number(param)
+  return Number.isNaN(n) ? undefined : n
+}
+
+// Consumes an extended color parameter (38 = foreground, 48 = background)
+// starting at `params[i]`. Returns the description and the number of extra
+// params consumed beyond the introducer itself, or undefined if the
+// sub-sequence isn't well-formed enough to describe.
+function describeExtendedColor(
+  role: 'foreground' | 'background',
+  params: string[],
+  i: number,
+): { text: string; consumed: number } | undefined {
+  const mode = toNumber(params[i + 1])
+  if (mode === 5) {
+    const index = toNumber(params[i + 2])
+    if (index === undefined) return undefined
+    return { text: `${role}=color256(${index})`, consumed: 2 }
+  }
+  if (mode === 2) {
+    const r = toNumber(params[i + 2])
+    const g = toNumber(params[i + 3])
+    const b = toNumber(params[i + 4])
+    if (r === undefined || g === undefined || b === undefined) return undefined
+    return { text: `${role}=rgb(${r},${g},${b})`, consumed: 4 }
+  }
+  return undefined
+}
+
 function describeSgrParam(param: string): string {
   const n = param === '' ? 0 : Number(param)
   if (Number.isNaN(n)) return `unknown(${param})`
@@ -38,7 +69,21 @@ function describeSgrParam(param: string): string {
 
 function describeSgr(token: CsiToken): string {
   if (token.params.length === 0) return 'SGR: reset'
-  return 'SGR: ' + token.params.map(describeSgrParam).join(', ')
+  const parts: string[] = []
+  const params = token.params
+  for (let i = 0; i < params.length; i++) {
+    const n = toNumber(params[i]) ?? 0
+    if (n === 38 || n === 48) {
+      const extended = describeExtendedColor(n === 38 ? 'foreground' : 'background', params, i)
+      if (extended !== undefined) {
+        parts.push(extended.text)
+        i += extended.consumed
+        continue
+      }
+    }
+    parts.push(describeSgrParam(params[i]!))
+  }
+  return 'SGR: ' + parts.join(', ')
 }
 
 function describeCsi(token: CsiToken): string {

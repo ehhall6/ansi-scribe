@@ -84,8 +84,6 @@ even once a control byte like ESC has been swapped out for a printable
 
 ## What it does not do yet
 
-- The SGR table covers the common codes (styles, 8/16-color, resets) but not
-  256-color or truecolor extended parameters (`38;5;n` / `38;2;r;g;b`).
 - Input must already be a JS string. Raw byte streams (e.g. a captured pty
   session) need to be decoded first.
 
