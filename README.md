@@ -70,6 +70,30 @@ The column counts source bytes, not rendered characters, so it stays correct
 even once a control byte like ESC has been swapped out for a printable
 `\e` glyph in the snippet above.
 
+## CLI
+
+`ansi-scribe` reads a terminal capture from stdin (or a file path given as
+the first argument) and writes the pretty-printed token stream to stdout,
+followed by any diagnostics. It exits non-zero if the input contained
+malformed sequences.
+
+```
+$ printf 'hello \x1b[1;31mworld\x1b[0m\n' | npx ansi-scribe
+1:1    text    "hello "
+1:7    CSI     SGR: bold, foreground=red
+1:14   text    "world"
+1:19   CSI     SGR: reset
+1:23   control LF
+
+$ printf 'status: \x1b[38;5' | npx ansi-scribe; echo "exit $?"
+error: unterminated CSI sequence
+  --> line 1, column 15
+  |
+1 | status: \e[38;5
+  |                ^ expected a final byte in the range 0x40-0x7E before the end of input
+exit 1
+```
+
 ## API
 
 - `tokenize(input): { tokens, errors }` -- never throws; collects every
