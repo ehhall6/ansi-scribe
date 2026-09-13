@@ -66,9 +66,9 @@ error: unterminated CSI sequence
   |                ^ expected a final byte in the range 0x40-0x7E before the end of input
 ```
 
-The column counts source bytes, not rendered characters, so it stays correct
-even once a control byte like ESC has been swapped out for a printable
-`\e` glyph in the snippet above.
+The column counts decoded characters, not rendered glyphs, so it stays
+correct even once a control byte like ESC has been swapped out for a
+printable `\e` glyph in the snippet above.
 
 ## CLI
 
@@ -97,7 +97,10 @@ exit 1
 ## API
 
 - `tokenize(input): { tokens, errors }` -- never throws; collects every
-  malformed sequence it finds instead of stopping at the first one.
+  malformed sequence it finds instead of stopping at the first one. `input`
+  can be a `string` or a `Uint8Array` (including `Buffer`) -- raw bytes are
+  decoded as UTF-8 before tokenizing, since escape sequence bytes are always
+  ASCII and don't need any special handling.
 - `tokenizeOrThrow(input): Token[]` -- throws the first `ParseError`.
 - `validate(input): ParseError[]` -- just the errors, if you only care
   whether the input is well-formed.
@@ -108,8 +111,10 @@ exit 1
 
 ## What it does not do yet
 
-- Input must already be a JS string. Raw byte streams (e.g. a captured pty
-  session) need to be decoded first.
+- Bytes that aren't valid UTF-8 are replaced with the U+FFFD glyph rather
+  than reported as a diagnostic, and positions are tracked in decoded
+  characters, not raw bytes -- a multi-byte character before a malformed
+  sequence will throw off the column count.
 
 ## License
 

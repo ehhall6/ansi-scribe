@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { tokenize } from './parser.js'
 import { print } from './printer.js'
 
-export function format(input: string): { output: string; exitCode: number } {
+export function format(input: string | Uint8Array): { output: string; exitCode: number } {
   const { tokens, errors } = tokenize(input)
   const sections: string[] = []
   if (tokens.length > 0) sections.push(print(tokens))
@@ -14,18 +14,18 @@ export function format(input: string): { output: string; exitCode: number } {
   return { output: sections.join('\n\n'), exitCode: errors.length > 0 ? 1 : 0 }
 }
 
-function readStdin(): Promise<string> {
+function readStdin(): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk))
-    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks)))
     process.stdin.on('error', reject)
   })
 }
 
 async function main(): Promise<void> {
   const filePath = process.argv[2]
-  const input = filePath !== undefined ? readFileSync(filePath, 'utf8') : await readStdin()
+  const input = filePath !== undefined ? readFileSync(filePath) : await readStdin()
   const { output, exitCode } = format(input)
   process.stdout.write(output + '\n')
   process.exitCode = exitCode

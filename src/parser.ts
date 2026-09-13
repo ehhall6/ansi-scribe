@@ -526,8 +526,15 @@ function readEscapeSequence(cursor: Cursor, source: string, start: Position, err
   return readSimpleEscape(cursor, source, start, errors)
 }
 
-export function tokenize(input: string): { tokens: Token[]; errors: ParseError[] } {
-  const cursor = new Cursor(input)
+// Escape sequence bytes are always in the ASCII range, so decoding the
+// surrounding text as UTF-8 is enough to support raw captures (a pty dump,
+// a file read without an encoding) without tracking two indexing schemes.
+// Bytes that aren't valid UTF-8 are replaced with U+FFFD by the decoder.
+const utf8Decoder = new TextDecoder('utf-8', { fatal: false })
+
+export function tokenize(input: string | Uint8Array): { tokens: Token[]; errors: ParseError[] } {
+  const source = typeof input === 'string' ? input : utf8Decoder.decode(input)
+  const cursor = new Cursor(source)
   const tokens: Token[] = []
   const errors: ParseError[] = []
   let textStart: Position | null = null
@@ -549,7 +556,7 @@ export function tokenize(input: string): { tokens: Token[]; errors: ParseError[]
       const start = cursor.position
       flushText(start)
       cursor.next()
-      tokens.push(readEscapeSequence(cursor, input, start, errors))
+      tokens.push(readEscapeSequence(cursor, source, start, errors))
       continue
     }
 
@@ -578,12 +585,12 @@ export function tokenize(input: string): { tokens: Token[]; errors: ParseError[]
 
 // Convenience wrapper for callers that want an exception instead of an
 // errors array -- throws the first ParseError encountered, if any.
-export function tokenizeOrThrow(input: string): Token[] {
+export function tokenizeOrThrow(input: string | Uint8Array): Token[] {
   const { tokens, errors } = tokenize(input)
   if (errors.length > 0) throw errors[0]
   return tokens
 }
 
-export function validate(input: string): ParseError[] {
+export function validate(input: string | Uint8Array): ParseError[] {
   return tokenize(input).errors
 }

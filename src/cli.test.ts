@@ -21,3 +21,9 @@ test('input with no tokens at all still exits clean with empty output', () => {
   assert.strictEqual(exitCode, 0)
   assert.strictEqual(output, '')
 })
+
+test('a raw byte buffer is accepted the same as a decoded string', () => {
+  const { output, exitCode } = format(Buffer.from('hi\x1b[1mthere\x1b[0m', 'utf8'))
+  assert.strictEqual(exitCode, 0)
+  assert.match(output, /SGR: bold/)
+})

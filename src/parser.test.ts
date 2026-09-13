@@ -341,3 +341,30 @@ test('ParseError.format renders message, location, source line, and caret', () =
   assert.ok(formatted.includes('status: \\e[38;5'))
   assert.ok(/\^ expected a final byte/.test(formatted))
 })
+
+test('tokenize accepts a Uint8Array of raw bytes in place of a string', () => {
+  const bytes = new TextEncoder().encode('hi \x1b[1mthere\x1b[0m')
+  const { tokens, errors } = tokenize(bytes)
+  assert.strictEqual(errors.length, 0)
+  const [text, csi] = tokens
+  if (text === undefined || text.kind !== 'text') throw new Error('expected a text token')
+  if (csi === undefined || csi.kind !== 'csi') throw new Error('expected a csi token')
+  assert.strictEqual(text.value, 'hi ')
+  assert.strictEqual(csi.final, 'm')
+})
+
+test('tokenize decodes multi-byte UTF-8 text surrounding a sequence', () => {
+  const bytes = new TextEncoder().encode('café \x1b[0m')
+  const { tokens, errors } = tokenize(bytes)
+  assert.strictEqual(errors.length, 0)
+  const [text] = tokens
+  if (text === undefined || text.kind !== 'text') throw new Error('expected a text token')
+  assert.strictEqual(text.value, 'café ')
+})
+
+test('a Buffer (a Uint8Array subclass) works the same as a plain Uint8Array', () => {
+  const buffer = Buffer.from('\x1b[31mred\x1b[0m', 'utf8')
+  const { tokens, errors } = tokenize(buffer)
+  assert.strictEqual(errors.length, 0)
+  assert.strictEqual(tokens.length, 3)
+})
