@@ -94,6 +94,27 @@ error: unterminated CSI sequence
 exit 1
 ```
 
+Pass `--fix` to rewrite the malformed sequences to the nearest valid form and
+write the repaired capture to stdout instead of the token stream and
+diagnostics. A sequence truncated before it named a final byte is dropped --
+there's no honest guess for what a cut-off capture meant to send:
+
+```
+$ printf 'status: \x1b[38;5' | npx ansi-scribe --fix; echo "|$?"
+status: |0
+```
+
+A sequence that's otherwise intact but lost its string terminator gets one
+appended:
+
+```
+$ printf 'title: \x1b]0;untitled' | npx ansi-scribe --fix | cat -v
+title: ^[]0;untitled^[\
+```
+
+`--fix` always exits 0 and writes the output byte-for-byte, with no trailing
+newline added, so it can be piped straight into a file or another tool.
+
 ## API
 
 - `tokenize(input): { tokens, errors }` -- never throws; collects every
@@ -106,6 +127,9 @@ exit 1
   whether the input is well-formed.
 - `print(tokens): string` / `describe(token): string` -- pretty-print a
   token stream, or a single token, as one line each with its position.
+- `fix(input): string` -- rewrites every malformed sequence in `input` to
+  the nearest valid form and returns the repaired text. Well-formed input
+  passes through unchanged.
 - `ParseError` -- extends `Error`, carries `position` (`{ offset, line,
   column }`) and `format()` for the diagnostic shown above.
 

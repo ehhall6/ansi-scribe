@@ -27,3 +27,16 @@ test('a raw byte buffer is accepted the same as a decoded string', () => {
   assert.strictEqual(exitCode, 0)
   assert.match(output, /SGR: bold/)
 })
+
+test('--fix mode writes the repaired capture instead of the token stream', () => {
+  const { output, exitCode } = format('status: \x1b[38;5', { fix: true })
+  assert.strictEqual(output, 'status: ')
+  assert.strictEqual(exitCode, 0)
+})
+
+test('--fix mode leaves already well-formed input untouched', () => {
+  const input = 'hi \x1b[1mthere\x1b[0m'
+  const { output, exitCode } = format(input, { fix: true })
+  assert.strictEqual(output, input)
+  assert.strictEqual(exitCode, 0)
+})

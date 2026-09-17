@@ -11,3 +11,4 @@ export type {
   Token,
 } from './parser.js'
 export { describe, print } from './printer.js'
+export { fix } from './fixer.js'
